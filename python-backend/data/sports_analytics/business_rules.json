@@ -1,0 +1,29 @@
+[
+  {
+    "id": "rule-baseline-performance",
+    "title": "Baseline Performance Rule",
+    "sourceType": "business_rule",
+    "content": "Baseline performance means comparing the athlete's average output in the recent time window to the athlete's historical average before that window. For generic performance questions, this MVP uses total_distance as the primary proxy and also returns sprint distance, high intensity efforts, and duration context.",
+    "metadata": {
+      "topic": "baseline"
+    }
+  },
+  {
+    "id": "rule-underperforming",
+    "title": "Underperforming Interpretation",
+    "sourceType": "business_rule",
+    "content": "The term underperforming routes to the historical-versus-recent baseline comparison. If the user does not name a metric explicitly, the system falls back to the workload proxy based on total distance.",
+    "metadata": {
+      "topic": "underperforming"
+    }
+  },
+  {
+    "id": "rule-grouping",
+    "title": "Position Grouping Guidance",
+    "sourceType": "business_rule",
+    "content": "Grouped analytics can use athlete position, team, session_type, or session_date. Position and team come from athletes, while session_type and session_date come from sessions.",
+    "metadata": {
+      "topic": "grouping"
+    }
+  }
+]

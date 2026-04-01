@@ -1,0 +1,29 @@
+[
+  {
+    "id": "example-workload-ranking",
+    "title": "Workload Ranking Example",
+    "sourceType": "approved_query",
+    "content": "Which athletes had the highest workload last week? maps to summed total_distance grouped by athlete over the recent 7 day window, with sprint distance, high intensity efforts, and duration returned as supporting columns.",
+    "metadata": {
+      "pattern": "aggregate_ranked"
+    }
+  },
+  {
+    "id": "example-sprint-by-position",
+    "title": "Sprint Distance by Position Example",
+    "sourceType": "approved_query",
+    "content": "Show average sprint distance by position over the last 30 days maps to AVG(gps_metrics.sprint_distance) grouped by athletes.position after joining gps_metrics to sessions and athletes.",
+    "metadata": {
+      "pattern": "aggregate_grouped"
+    }
+  },
+  {
+    "id": "example-below-baseline",
+    "title": "Baseline Comparison Example",
+    "sourceType": "approved_query",
+    "content": "Who is trending below their baseline performance? maps to a historical-average-versus-recent-average comparison, filtered to athletes whose recent total_distance is below their earlier average.",
+    "metadata": {
+      "pattern": "baseline_gap"
+    }
+  }
+]

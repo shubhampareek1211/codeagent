@@ -1,0 +1,32 @@
+[
+  {
+    "id": "metric-workload",
+    "title": "Workload Proxy Definition",
+    "sourceType": "metric_definition",
+    "content": "The DataGrip schema does not contain a dedicated workload column. In this MVP, workload questions are answered with a proxy view that ranks athletes by summed total_distance and also returns summed sprint_distance, high_intensity_efforts, and duration_minutes for context.",
+    "metadata": {
+      "metric": "workload",
+      "unit": "m"
+    }
+  },
+  {
+    "id": "metric-sprint-distance",
+    "title": "Sprint Distance Definition",
+    "sourceType": "metric_definition",
+    "content": "Sprint distance is stored in gps_metrics.sprint_distance and is usually aggregated across sessions after joining gps_metrics to sessions and athletes.",
+    "metadata": {
+      "metric": "sprint_distance",
+      "unit": "m"
+    }
+  },
+  {
+    "id": "metric-sleep",
+    "title": "Sleep Score Definition",
+    "sourceType": "metric_definition",
+    "content": "Sleep score is stored in wellness.sleep_score and should typically be averaged over the requested time window.",
+    "metadata": {
+      "metric": "sleep_score",
+      "unit": "score"
+    }
+  }
+]

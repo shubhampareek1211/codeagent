@@ -1,0 +1,38 @@
+[
+  {
+    "id": "schema-athletes",
+    "title": "Athlete Schema Notes",
+    "sourceType": "schema_note",
+    "content": "The athletes table stores athlete_id, name, position, and team. It is the shared dimension table for session, GPS, and wellness analytics.",
+    "metadata": {
+      "table": "athletes"
+    }
+  },
+  {
+    "id": "schema-sessions",
+    "title": "Session Schema Notes",
+    "sourceType": "schema_note",
+    "content": "The sessions table stores session_id, athlete_id, session_date, duration_minutes, and session_type. The session_date column is text, so analytics queries must convert it with TO_DATE before filtering by date.",
+    "metadata": {
+      "table": "sessions"
+    }
+  },
+  {
+    "id": "schema-gps",
+    "title": "GPS Metrics Schema Notes",
+    "sourceType": "schema_note",
+    "content": "The gps_metrics table stores total_distance, sprint_distance, and high_intensity_efforts by session_id. It joins to athletes through sessions rather than directly through athlete_id.",
+    "metadata": {
+      "table": "gps_metrics"
+    }
+  },
+  {
+    "id": "schema-wellness",
+    "title": "Wellness Schema Notes",
+    "sourceType": "schema_note",
+    "content": "The wellness table stores athlete_id, date, fatigue_score, and sleep_score. The date column is text and should be converted with TO_DATE when applying time windows.",
+    "metadata": {
+      "table": "wellness"
+    }
+  }
+]

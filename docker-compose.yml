@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sports_analytics_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: creatorhub
+      POSTGRES_PASSWORD: creatorhub_pass
+      POSTGRES_DB: creatorhub_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - sports_analytics_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U creatorhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sports_analytics_postgres_data:
