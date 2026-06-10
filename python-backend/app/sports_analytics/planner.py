@@ -12,6 +12,9 @@ def build_query_plan(intent: StructuredIntent) -> QueryPlan:
     source_tables, joins = _source_tables_for_metric(metric.table)
     dimensions = _dimensions_for_intent(intent)
     notes = list(intent.interpretation_notes)
+    requested_limit = None
+    if intent.requested_limit is not None:
+        requested_limit = max(1, min(intent.requested_limit, 50))
 
     if intent.metric == "workload":
         notes.append(
@@ -33,7 +36,7 @@ def build_query_plan(intent: StructuredIntent) -> QueryPlan:
             filters=intent.filters,
             time_window=intent.time_window,
             order_by=order_by,
-            limit=10,
+            limit=requested_limit or 10,
             output_type=intent.output_type,
             comparison_type=intent.comparison_type,
             notes=notes,
@@ -41,7 +44,12 @@ def build_query_plan(intent: StructuredIntent) -> QueryPlan:
 
     query_kind = "timeseries" if intent.grouping == "session_date" else "aggregate"
     order_direction = "asc" if query_kind == "timeseries" else ("asc" if intent.ranking == "bottom" else "desc")
-    limit = intent.time_window.lookback_days if query_kind == "timeseries" and intent.time_window else 10
+    if requested_limit is not None:
+        limit = requested_limit
+    elif query_kind == "timeseries" and intent.time_window and intent.time_window.lookback_days:
+        limit = intent.time_window.lookback_days
+    else:
+        limit = 10
 
     return QueryPlan(
         query_kind=query_kind,
@@ -70,7 +78,10 @@ def validate_query_plan(plan: QueryPlan) -> ValidationOutcome:
     if plan.metric_table not in {"gps_metrics", "wellness", "sessions"}:
         messages.append(f"Unsupported metric table: {plan.metric_table}")
 
-    supported_groupings = set(GROUPING_ALIASES.keys()) | {"athlete_id", "athlete_name", "position", "team"}
+    supported_groupings = set(GROUPING_ALIASES.keys()) | {
+        "athlete_id", "athlete_name", "position", "team",
+        "competition", "nationality", "sport", "opponent",
+    }
     for dimension in plan.dimensions:
         if dimension not in supported_groupings:
             messages.append(f"Unsupported dimension: {dimension}")
@@ -106,8 +117,12 @@ def _source_tables_for_metric(metric_table: str) -> tuple[list[str], list[JoinSp
 
 
 def _dimensions_for_intent(intent: StructuredIntent) -> list[str]:
+    # An explicit non-athlete grouping (position/team/nationality/sport/competition/
+    # opponent/session_type/session_date) always wins, even when the query also has
+    # ranking language ("highest", "top", "most").
+    if intent.grouping is not None and intent.grouping != "athlete_name":
+        return [intent.grouping]
+    # Only default to athlete-level dimensions when grouping is absent or athlete-level.
     if intent.grouping == "athlete_name" or intent.ranking != "none" or intent.comparison_type == "baseline":
         return ["athlete_id", "athlete_name", "position"]
-    if intent.grouping:
-        return [intent.grouping]
     return []

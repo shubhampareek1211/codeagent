@@ -46,6 +46,8 @@ def validate_sql(plan: QueryPlan, compiled_sql: CompiledSql) -> ValidationOutcom
         "sessions",
         "gps_metrics",
         "wellness",
+        "player_tracking",
+        "competitions",
         "session_output",
         "metric_points",
         "baseline",
@@ -87,6 +89,11 @@ def _compile_aggregate(plan: QueryPlan, metric: Any) -> CompiledSql:
     joins = _join_clauses(plan.source_tables, metric.table)
     where_sql, where_params = _build_where_clause(plan.filters, metric.table, plan.time_window)
     params.extend(where_params)
+
+    # Exclude rows where the metric itself is NULL (e.g. soccer rows have no
+    # avg_speed/max_speed) so aggregates never surface NULL metric values.
+    not_null_clause = f"{metric_alias}.{metric.column} IS NOT NULL"
+    where_sql = not_null_clause if where_sql in ("", "1=1") else f"{not_null_clause} AND {where_sql}"
 
     sql_parts = [
         "SELECT",
@@ -356,6 +363,15 @@ def _dimension_expression(dimension: str, metric_table: str) -> tuple[str, str]:
         return "s.session_type", "session_type"
     if dimension == "session_date":
         return _date_expression(metric_table), "session_date"
+    # ── new dimensions ────────────────────────────────────────────────────────
+    if dimension == "competition":
+        return "s.competition", "competition"
+    if dimension == "opponent":
+        return "s.opponent", "opponent"
+    if dimension == "nationality":
+        return "a.nationality", "nationality"
+    if dimension == "sport":
+        return "a.sport", "sport"
     raise ValueError(f"Unsupported dimension: {dimension}")
 
 
@@ -375,7 +391,7 @@ def _build_where_clause(
     clauses: list[str] = []
     params: list[Any] = []
 
-    if time_window and time_window.start_date and time_window.end_date:
+    if time_window is not None and time_window.start_date and time_window.end_date:
         clauses.append(f"{_date_expression(metric_table)} BETWEEN %s AND %s")
         params.extend([time_window.start_date, time_window.end_date])
 
@@ -395,8 +411,18 @@ def _build_filter_clause(filters: list[QueryFilter]) -> tuple[str, list[Any]]:
             clauses.append("a.position = %s")
             params.append(query_filter.value)
         elif query_filter.field == "team":
-            clauses.append("a.team = %s")
+            clauses.append("a.team ILIKE %s")
             params.append(query_filter.value)
+        elif query_filter.field == "sport":
+            clauses.append("a.sport = %s")
+            params.append(query_filter.value)
+        elif query_filter.field == "nationality":
+            clauses.append("a.nationality ILIKE %s")
+            params.append(query_filter.value)
+        elif query_filter.field == "competition":
+            val = query_filter.value
+            clauses.append("s.competition ILIKE %s")
+            params.append(val if val.startswith("%") else f"%{val}%")
         elif query_filter.field == "session_type":
             clauses.append("s.session_type = %s")
             params.append(query_filter.value)

@@ -1,0 +1,14 @@
+# Slim dependency set for cloud deployment (fits 512MB free tiers).
+# Omits torch / sentence-transformers / faiss-cpu: HybridSearchEngine in
+# app/search.py detects their absence and falls back to BM25-only retrieval,
+# which is sufficient for the small business-rule corpus (13 documents).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+numpy==2.2.2
+rank-bm25==0.2.2
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+langgraph==1.0.5
+langchain-core==1.2.3
+psycopg[binary]==3.2.12
+httpx==0.28.1

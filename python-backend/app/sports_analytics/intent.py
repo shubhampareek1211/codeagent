@@ -9,7 +9,55 @@ from app.sports_analytics.registry import (
     GROUPING_ALIASES,
     METRIC_REGISTRY,
     SUPPORTED_POSITIONS,
+    SUPPORTED_SPORTS,
     SUPPORTED_TEAMS,
+)
+
+# Known competition names for filter extraction
+KNOWN_COMPETITIONS = (
+    "fifa world cup 2022",
+    "world cup 2022",
+    "world cup",
+    "nfl big data bowl 2023",
+    "big data bowl",
+    "nfl",
+)
+
+# Known nationalities / country names + demonyms that appear in the dataset.
+# Tuple: (query_keyword, canonical_db_value)
+KNOWN_NATIONALITIES: tuple[tuple[str, str], ...] = (
+    ("argentina", "Argentina"), ("argentine", "Argentina"), ("argentinian", "Argentina"),
+    ("france", "France"), ("french", "France"),
+    ("england", "England"), ("english", "England"),
+    ("brazil", "Brazil"), ("brazilian", "Brazil"),
+    ("portugal", "Portugal"), ("portuguese", "Portugal"),
+    ("spain", "Spain"), ("spanish", "Spain"),
+    ("germany", "Germany"), ("german", "Germany"),
+    ("netherlands", "Netherlands"), ("dutch", "Netherlands"),
+    ("morocco", "Morocco"), ("moroccan", "Morocco"),
+    ("croatia", "Croatia"), ("croatian", "Croatia"),
+    ("united states", "United States"), ("usa", "United States"), ("american", "United States"),
+    ("senegal", "Senegal"), ("senegalese", "Senegal"),
+    ("japan", "Japan"), ("japanese", "Japan"),
+    ("south korea", "South Korea"), ("korean", "South Korea"),
+    ("australia", "Australia"), ("australian", "Australia"),
+    ("switzerland", "Switzerland"), ("swiss", "Switzerland"),
+    ("belgium", "Belgium"), ("belgian", "Belgium"),
+    ("denmark", "Denmark"), ("danish", "Denmark"),
+    ("poland", "Poland"), ("polish", "Poland"),
+    ("mexico", "Mexico"), ("mexican", "Mexico"),
+    ("ghana", "Ghana"), ("ghanaian", "Ghana"),
+    ("cameroon", "Cameroon"), ("cameroonian", "Cameroon"),
+    ("ecuador", "Ecuador"), ("ecuadorian", "Ecuador"),
+    ("iran", "Iran"), ("iranian", "Iran"),
+    ("canada", "Canada"), ("canadian", "Canada"),
+    ("wales", "Wales"), ("welsh", "Wales"),
+    ("qatar", "Qatar"), ("qatari", "Qatar"),
+    ("saudi arabia", "Saudi Arabia"), ("saudi", "Saudi Arabia"),
+    ("uruguay", "Uruguay"), ("uruguayan", "Uruguay"),
+    ("serbia", "Serbia"), ("serbian", "Serbia"),
+    ("costa rica", "Costa Rica"), ("costa rican", "Costa Rica"),
+    ("tunisia", "Tunisia"), ("tunisian", "Tunisia"),
 )
 
 
@@ -26,6 +74,7 @@ def extract_intent(query: str, today: date | None = None) -> StructuredIntent:
     time_window = _parse_time_window(normalized, current_day)
     comparison_type = _match_comparison_type(normalized)
     ranking = _match_ranking(normalized)
+    requested_limit = _match_requested_limit(normalized)
     aggregation = _match_aggregation(normalized, primary_metric, grouping, comparison_type)
     filters = _match_filters(normalized)
     ambiguity_flags: list[str] = []
@@ -58,15 +107,34 @@ def extract_intent(query: str, today: date | None = None) -> StructuredIntent:
             "Ignored trend-style date grouping because baseline questions are answered as athlete comparisons."
         )
 
+    # ── sport / competition scope filters (needs grouping to be resolved first) ──
+    has_sport_filter = any(f.field == "sport" for f in filters)
+    if not has_sport_filter and grouping != "sport":
+        if any(kw in normalized for kw in ("nfl", "big data bowl", "american football", "football player")):
+            filters.append(QueryFilter(field="sport", operator="=", value="american_football"))
+        elif any(kw in normalized for kw in ("world cup", "fifa")):
+            filters.append(QueryFilter(field="competition", operator="ILIKE", value="World Cup"))
+        elif "soccer" in normalized and "american" not in normalized:
+            filters.append(QueryFilter(field="sport", operator="=", value="soccer"))
+
     if time_window is None:
-        default_days = 7 if comparison_type == "baseline" else 30
-        time_window = TimeWindow(
-            label=f"last {default_days} days",
-            start_date=current_day - timedelta(days=default_days - 1),
-            end_date=current_day,
-            lookback_days=default_days,
-        )
-        interpretation_notes.append(f"Applied the default {default_days}-day window for this query.")
+        # For baseline / trend queries, apply a default window so the comparison is meaningful.
+        # For plain aggregation queries with no explicit time context, skip the window so
+        # historical datasets (World Cup 2022, NFL 2021) are not excluded by a rolling default.
+        has_competition_filter = any(f.field == "competition" for f in filters)
+        needs_default_window = comparison_type in ("baseline", "trend") and not has_competition_filter
+        if needs_default_window:
+            default_days = 7 if comparison_type == "baseline" else 30
+            time_window = TimeWindow(
+                label=f"last {default_days} days",
+                start_date=current_day - timedelta(days=default_days - 1),
+                end_date=current_day,
+                lookback_days=default_days,
+            )
+            interpretation_notes.append(f"Applied the default {default_days}-day window for this query.")
+        else:
+            # No time constraint — query will return all available data.
+            interpretation_notes.append("No time window applied — returning all available data.")
 
     output_type = _infer_output_type(grouping, ranking, comparison_type)
     chart_requested = any(term in normalized for term in ("chart", "plot", "graph", "visualize"))
@@ -96,6 +164,7 @@ def extract_intent(query: str, today: date | None = None) -> StructuredIntent:
         time_window=time_window,
         comparison_type=comparison_type,
         ranking=ranking,
+        requested_limit=requested_limit,
         output_type=output_type,
         chart_requested=chart_requested,
         chart_eligible=chart_eligible,
@@ -106,11 +175,16 @@ def extract_intent(query: str, today: date | None = None) -> StructuredIntent:
 
 
 def _match_metrics(normalized_query: str) -> list[str]:
-    matches: list[str] = []
+    # Rank matches by the longest alias that hit so the most specific metric wins
+    # (e.g. "sprint distance" beats total_distance's generic "distance" alias and
+    # "max speed" beats avg_speed's generic "speed" alias). Ties keep registry order.
+    scored: list[tuple[int, str]] = []
     for metric_key, meta in METRIC_REGISTRY.items():
-        if any(alias in normalized_query for alias in meta.aliases):
-            matches.append(metric_key)
-    return matches
+        matched_lengths = [len(alias) for alias in meta.aliases if alias in normalized_query]
+        if matched_lengths:
+            scored.append((max(matched_lengths), metric_key))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [metric_key for _, metric_key in scored]
 
 
 def _match_grouping(normalized_query: str) -> str | None:
@@ -126,6 +200,13 @@ def _match_comparison_type(normalized_query: str) -> str:
     if "trend" in normalized_query or "trending" in normalized_query or "over time" in normalized_query:
         return "trend"
     return "none"
+
+
+def _match_requested_limit(normalized_query: str) -> int | None:
+    match = re.search(r"\b(?:top|bottom|first)\s+(\d{1,2})\b", normalized_query)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def _match_ranking(normalized_query: str) -> str:
@@ -159,12 +240,33 @@ def _match_aggregation(
 
 def _match_filters(normalized_query: str) -> list[QueryFilter]:
     filters: list[QueryFilter] = []
+
+    # Position filters
     for position in SUPPORTED_POSITIONS:
-        if position in normalized_query:
-            filters.append(QueryFilter(field="position", operator="=", value=position.title()))
+        if position.replace("_", " ") in normalized_query or position in normalized_query:
+            filters.append(QueryFilter(field="position", operator="=", value=position))
+
+    # Team filters
     for team in SUPPORTED_TEAMS:
-        if team in normalized_query:
-            filters.append(QueryFilter(field="team", operator="=", value=team.title()))
+        if team.lower() in normalized_query:
+            filters.append(QueryFilter(field="team", operator="=", value=team))
+
+    # Sport filters
+    for sport in SUPPORTED_SPORTS:
+        sport_display = sport.replace("_", " ")
+        if sport_display in normalized_query or sport in normalized_query:
+            filters.append(QueryFilter(field="sport", operator="=", value=sport))
+
+    # Competition / sport scope filters handled in extract_intent (needs grouping context)
+
+    # Nationality filters — sorted longest-first to avoid partial matches
+    matched_nat: set[str] = set()
+    for keyword, canonical in sorted(KNOWN_NATIONALITIES, key=lambda t: len(t[0]), reverse=True):
+        if keyword in normalized_query and canonical not in matched_nat:
+            filters.append(QueryFilter(field="nationality", operator="=", value=canonical))
+            matched_nat.add(canonical)
+            break  # one nationality filter per query
+
     return filters
 
 

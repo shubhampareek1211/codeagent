@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class QueryFilter(BaseModel):
     field: str
-    operator: Literal["=", "!=", ">", ">=", "<", "<=", "in", "between"]
+    operator: Literal["=", "!=", ">", ">=", "<", "<=", "in", "between", "ILIKE"]
     value: Any
 
 
@@ -46,6 +46,7 @@ class StructuredIntent(BaseModel):
     time_window: TimeWindow | None = None
     comparison_type: Literal["none", "trend", "baseline"] = "none"
     ranking: Literal["top", "bottom", "none"] = "none"
+    requested_limit: int | None = None
     output_type: Literal["kpi", "table", "ranked_list", "grouped_output", "trend"] = "table"
     chart_requested: bool = False
     chart_eligible: bool = False

@@ -148,7 +148,8 @@ class SportsAnalyticsService:
             return SqlDebugResponse(intent=intent, plan_validation=invalid, sql_validation=invalid)
 
         plan = build_query_plan(intent)
-        plan.limit = self.default_limit
+        if intent.requested_limit is None:
+            plan.limit = self.default_limit
         plan_validation = validate_query_plan(plan)
         compiled = compile_sql(plan) if plan_validation.valid else None
         sql_validation = validate_sql(plan, compiled) if compiled else ValidationOutcome(valid=False, messages=["SQL was not compiled."])
@@ -206,7 +207,8 @@ class SportsAnalyticsService:
 
     def _build_plan(self, state: AnalyticsState) -> AnalyticsState:
         plan = build_query_plan(state["intent"])
-        plan.limit = self.default_limit if plan.query_kind != "timeseries" else plan.limit
+        if plan.query_kind != "timeseries" and state["intent"].requested_limit is None:
+            plan.limit = self.default_limit
         return {"plan": plan}
 
     def _validate_plan(self, state: AnalyticsState) -> AnalyticsState:
@@ -339,8 +341,7 @@ class SportsAnalyticsService:
             )
         elif intent.grouping is not None or intent.ranking != "none":
             lead = data.rows[0]
-            dimension = "athlete_name" if "athlete_name" in data.columns else (state["plan"].dimensions[0] if state["plan"].dimensions else "athlete_name")
-            dimension_label = "athlete" if dimension == "athlete_name" else dimension.replace("_", " ")
+            dimension, dimension_label = self._leading_dimension(data.columns, state.get("plan"))
             if intent.metric == "workload":
                 summary = (
                     f"Using total distance as the workload proxy, the leading {dimension_label} is {lead[dimension]} "
@@ -383,6 +384,35 @@ class SportsAnalyticsService:
             retrieved_context=state.get("retrieved_context", []),
         )
         return {"response": response}
+
+    # Result-row keys that identify the grouping dimension of a grouped/ranked
+    # result, mapped to the label used in the natural-language summary.
+    _GROUP_DIMENSION_LABELS: dict[str, str] = {
+        "athlete_name": "athlete",
+        "position": "position",
+        "nationality": "nationality",
+        "sport": "sport",
+        "team": "team",
+        "competition": "competition",
+        "opponent": "opponent",
+        "session_type": "session type",
+    }
+
+    @classmethod
+    def _leading_dimension(cls, columns: list[str], plan: QueryPlan | None) -> tuple[str, str]:
+        """Pick the dimension column + human label for the summary sentence.
+
+        Inspects the result columns so grouped results are described by their
+        actual grouping (position/nationality/sport/team/...) instead of always
+        saying "athlete".
+        """
+        for key, label in cls._GROUP_DIMENSION_LABELS.items():
+            if key in columns:
+                return key, label
+        if plan is not None and plan.dimensions:
+            dimension = plan.dimensions[0]
+            return dimension, dimension.replace("_", " ")
+        return "athlete_name", "athlete"
 
     @staticmethod
     def _route_after_ambiguity(state: AnalyticsState) -> str:

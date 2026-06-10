@@ -83,6 +83,30 @@ def test_graph_returns_ranked_response() -> None:
     )
 
 
+class FakeGroupedRepository(FakeRepository):
+    def execute_select(self, sql: str, params: list[object]) -> list[dict[str, object]]:
+        return [
+            {"position": "wide_receiver", "metric_value": Decimal("6.21")},
+            {"position": "cornerback", "metric_value": Decimal("6.05")},
+        ]
+
+
+def test_grouped_ranking_summary_uses_grouping_label() -> None:
+    service = SportsAnalyticsService(
+        repository=FakeGroupedRepository(),
+        retrieval_service=FakeRetrieval(),
+        default_limit=5,
+    )
+
+    response = service.query(SportsQueryRequest(query="Which NFL position averages the highest speed?"))
+
+    assert response.plan is not None
+    assert response.plan.dimensions == ["position"]
+    assert response.data.rows[0]["position"] == "wide_receiver"
+    assert "athlete_name" not in response.data.columns
+    assert response.summary.startswith("The leading position is wide_receiver")
+
+
 def test_graph_returns_baseline_response_with_grounding() -> None:
     service = SportsAnalyticsService(
         repository=FakeRepository(),

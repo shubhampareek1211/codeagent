@@ -13,3 +13,4 @@ python-backend/.pytest_cache/
 python-backend/**/__pycache__/
 **/__pycache__/
 *.pyc
+python-backend/etl/data/

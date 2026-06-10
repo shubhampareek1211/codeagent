@@ -1,0 +1,41 @@
+# Render Blueprint — Sports Analytics Backend
+# Deploy: Render Dashboard → New → Blueprint → connect this repo.
+# Creates the FastAPI web service and a managed PostgreSQL database,
+# wired together automatically.
+#
+# After first deploy, load the real data from your local machine:
+#   export SPORTS_DATABASE_URL="<External Database URL from Render dashboard>"
+#   cd python-backend
+#   .venv/bin/python etl/run_migration.py
+#   .venv/bin/python etl/statsbomb_etl.py
+#   .venv/bin/python etl/nfl_etl.py
+#   .venv/bin/python etl/wellness_seed.py
+
+services:
+  - type: web
+    name: sports-analytics-backend
+    runtime: python
+    plan: free
+    rootDir: python-backend
+    buildCommand: pip install -r requirements-deploy.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: SPORTS_DATABASE_URL
+        fromDatabase:
+          name: sports-analytics-db
+          property: connectionString
+      - key: SPORTS_AUTO_BOOTSTRAP
+        value: "false"
+      - key: SPORTS_KNOWLEDGE_DIR
+        value: ./data/sports_analytics
+      - key: CORS_ORIGINS
+        value: https://shubham-pareek-portfolio.vercel.app,http://localhost:3000
+      - key: PYTHON_VERSION
+        value: 3.12.7
+
+databases:
+  - name: sports-analytics-db
+    plan: free
+    databaseName: sports_analytics
+    user: sports
