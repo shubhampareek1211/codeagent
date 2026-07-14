@@ -1,0 +1,10 @@
+# Only the Next.js frontend deploys to Vercel — the Python backend deploys to
+# Render (see DEPLOY_BACKEND.md). Local data/venvs must never upload.
+python-backend
+.next
+node_modules
+*.feather
+.env.local
+# Render blueprint (backend deploy) — confuses Vercel's service detection
+render.yaml
+docker-compose.yml
