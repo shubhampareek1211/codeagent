@@ -4,10 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
-    app_name: str = 'Ask Shubham Retrieval Service'
-    knowledge_dir: str = '../data/knowledge'
+    app_name: str = 'Sports Analytics Backend'
     embedding_model: str = 'sentence-transformers/all-MiniLM-L6-v2'
-    default_top_k: int = 5
     cors_origins: str = 'http://localhost:3000,https://shubham-pareek-portfolio.vercel.app'
     database_url: str | None = None
     sports_database_url: str = 'postgresql://creatorhub:creatorhub_pass@localhost:5433/creatorhub_dev'

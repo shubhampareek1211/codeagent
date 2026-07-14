@@ -1,0 +1,164 @@
+[
+  {
+    "id": "readme-top10-distance-wc",
+    "query": "Top 10 players by total distance in the World Cup",
+    "expect": {
+      "metric": "total_distance",
+      "ranking": "top",
+      "requested_limit": 10,
+      "filter_fields": ["competition"],
+      "sql_contains": ["ORDER BY metric_value DESC", "s.competition ILIKE %s"]
+    }
+  },
+  {
+    "id": "readme-position-pressures",
+    "query": "Which position had the most pressures in the World Cup?",
+    "expect": {
+      "metric": "pressures",
+      "grouping": "position",
+      "sql_contains": ["GROUP BY a.position"],
+      "sql_not_contains": ["athlete_name"]
+    }
+  },
+  {
+    "id": "readme-nfl-wr-sprint",
+    "query": "Top 5 NFL wide receivers by sprint distance",
+    "expect": {
+      "metric": "sprint_distance",
+      "requested_limit": 5,
+      "filter_fields": ["sport", "position"],
+      "forbidden_filter_fields": ["nationality"]
+    }
+  },
+  {
+    "id": "readme-avg-passes-position-soccer",
+    "query": "Average passes per position in soccer",
+    "expect": {
+      "metric": "passes",
+      "grouping": "position",
+      "aggregation": "avg",
+      "no_time_window": true,
+      "filter_fields": ["sport"]
+    }
+  },
+  {
+    "id": "readme-argentine-distance",
+    "query": "Top 5 Argentine players by total distance",
+    "expect": {
+      "metric": "total_distance",
+      "requested_limit": 5,
+      "filter_value": {"field": "nationality", "value": "Argentina"}
+    }
+  },
+  {
+    "id": "readme-nfl-position-speed",
+    "query": "Which NFL position averages the highest speed?",
+    "expect": {
+      "metric": "avg_speed",
+      "grouping": "position",
+      "sql_contains": ["GROUP BY a.position", "g.avg_speed IS NOT NULL"]
+    }
+  },
+  {
+    "id": "readme-nationality-shots",
+    "query": "Which nationality scored the most shots?",
+    "expect": {
+      "metric": "shots",
+      "grouping": "nationality",
+      "sql_contains": ["GROUP BY a.nationality"]
+    }
+  },
+  {
+    "id": "readme-compare-sports",
+    "query": "Compare total distance between soccer and american football",
+    "expect": {
+      "metric": "total_distance",
+      "grouping": "sport",
+      "forbidden_filter_fields": ["sport"],
+      "sql_contains": ["GROUP BY a.sport"],
+      "sql_not_contains": ["a.sport = %s"],
+      "audit_issue": "B1"
+    }
+  },
+  {
+    "id": "audit-american-football-nationality",
+    "query": "Top 5 american football players by sprint distance",
+    "expect": {
+      "metric": "sprint_distance",
+      "filter_fields": ["sport"],
+      "forbidden_filter_fields": ["nationality"],
+      "audit_issue": "B2"
+    }
+  },
+  {
+    "id": "audit-wellness-competition-reject",
+    "query": "Average fatigue score in the World Cup",
+    "expect": {
+      "metric": "fatigue_score",
+      "plan_invalid": true,
+      "audit_issue": "B3"
+    }
+  },
+  {
+    "id": "audit-player-entity",
+    "query": "How many passes did Messi make?",
+    "expect": {
+      "metric": "passes",
+      "filter_value": {"field": "athlete_name", "value": "Lionel Andrés Messi Cuccittini"},
+      "audit_issue": "B4"
+    }
+  },
+  {
+    "id": "audit-anchored-window",
+    "query": "Which athletes had the highest workload last week?",
+    "expect": {
+      "metric": "workload",
+      "window_end": "2022-12-18",
+      "audit_issue": "B5"
+    }
+  },
+  {
+    "id": "audit-minutes-not-min",
+    "query": "Session duration minutes by position",
+    "expect": {
+      "metric": "duration_minutes",
+      "aggregation": "avg",
+      "audit_issue": "M1"
+    }
+  },
+  {
+    "id": "audit-wc-football-players",
+    "query": "Which world cup football players covered the most distance?",
+    "expect": {
+      "metric": "total_distance",
+      "filter_fields": ["competition"],
+      "forbidden_filter_fields": ["sport"],
+      "audit_issue": "M2"
+    }
+  },
+  {
+    "id": "audit-multi-nationality",
+    "query": "Compare total distance between France and Argentina",
+    "expect": {
+      "metric": "total_distance",
+      "filter_operator": {"field": "nationality", "operator": "in"},
+      "audit_issue": "M3"
+    }
+  },
+  {
+    "id": "baseline-workload",
+    "query": "Who is trending below their baseline performance?",
+    "expect": {
+      "metric": "workload",
+      "comparison_type": "baseline",
+      "sql_contains": ["baseline_gap_pct", "WHERE session_date < %s"]
+    }
+  },
+  {
+    "id": "clarification-no-metric",
+    "query": "How are the athletes doing?",
+    "expect": {
+      "metric": null
+    }
+  }
+]

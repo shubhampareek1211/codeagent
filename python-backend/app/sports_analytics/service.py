@@ -42,6 +42,7 @@ class AnalyticsState(TypedDict, total=False):
     sql: CompiledSql
     sql_validation: ValidationOutcome
     data: QueryData
+    execution_error: str | None
     result_validation: ValidationOutcome
     visualization: VisualizationSpec
     summary: str
@@ -69,7 +70,31 @@ class SportsAnalyticsService:
         self.repository = repository
         self.retrieval_service = retrieval_service
         self.default_limit = default_limit
+        self._anchor_date: date | None | str = "unset"
+        self._athlete_names: list[str] | None = None
         self.graph = self._build_graph()
+
+    def _anchor_today(self) -> date | None:
+        """Anchor relative time windows to the dataset's latest session date.
+
+        The datasets are historical (World Cup 2022, NFL 2021); anchoring to the
+        wall clock would make "last week"/baseline defaults return nothing.
+        Falls back to None (= wall clock) when the DB is unavailable.
+        """
+        if self._anchor_date == "unset":
+            getter = getattr(self.repository, "get_max_session_date", None)
+            self._anchor_date = getter() if callable(getter) else None
+        return self._anchor_date  # type: ignore[return-value]
+
+    def _known_athletes(self) -> list[str]:
+        """DB-grounded athlete name index for entity extraction."""
+        if self._athlete_names is None:
+            lister = getattr(self.repository, "list_athlete_names", None)
+            self._athlete_names = lister() if callable(lister) else []
+        return self._athlete_names
+
+    def _extract(self, query: str) -> StructuredIntent:
+        return extract_intent(query, today=self._anchor_today(), athlete_names=self._known_athletes())
 
     def _build_graph(self):
         graph = StateGraph(AnalyticsState)
@@ -132,17 +157,17 @@ class SportsAnalyticsService:
         return result["response"]
 
     def debug_intent(self, request: SportsQueryRequest) -> IntentDebugResponse:
-        intent = extract_intent(request.query)
+        intent = self._extract(request.query)
         return IntentDebugResponse(intent=intent)
 
     def debug_retrieval(self, request: SportsQueryRequest) -> RetrievalDebugResponse:
-        intent = extract_intent(request.query)
+        intent = self._extract(request.query)
         retrieval_needed = self.retrieval_service.should_retrieve(intent)
         results = self.retrieval_service.search(request.query, top_k=request.top_k) if retrieval_needed else []
         return RetrievalDebugResponse(intent=intent, retrieval_needed=retrieval_needed, results=results)
 
     def debug_sql(self, request: SportsQueryRequest) -> SqlDebugResponse:
-        intent = extract_intent(request.query)
+        intent = self._extract(request.query)
         if intent.metric is None:
             invalid = ValidationOutcome(valid=False, messages=["A supported metric could not be identified."])
             return SqlDebugResponse(intent=intent, plan_validation=invalid, sql_validation=invalid)
@@ -180,7 +205,7 @@ class SportsAnalyticsService:
 
     def _extract_intent(self, state: AnalyticsState) -> AnalyticsState:
         request = state["request"]
-        intent = extract_intent(request.query)
+        intent = self._extract(request.query)
         return {"intent": intent}
 
     def _detect_ambiguity(self, state: AnalyticsState) -> AnalyticsState:
@@ -222,12 +247,29 @@ class SportsAnalyticsService:
 
     def _validate_sql(self, state: AnalyticsState) -> AnalyticsState:
         validation = validate_sql(state["plan"], state["sql"])
+        if validation.valid:
+            # Engine-side validation: EXPLAIN against the live DB catches alias/
+            # type errors the static checks cannot (PLAN.md T4.1). Skipped when
+            # no DB is configured or the repository does not support it.
+            explainer = getattr(self.repository, "explain", None)
+            if callable(explainer):
+                engine_error = explainer(state["sql"].sql, state["sql"].params)
+                if engine_error:
+                    validation = ValidationOutcome(
+                        valid=False,
+                        messages=[f"The compiled SQL failed engine validation: {engine_error}"],
+                    )
         warnings = list(state.get("warnings", []))
         warnings.extend(validation.messages)
         return {"sql_validation": validation, "warnings": warnings}
 
     def _execute_sql(self, state: AnalyticsState) -> AnalyticsState:
-        rows = self.repository.execute_select(state["sql"].sql, state["sql"].params)
+        try:
+            rows = self.repository.execute_select(state["sql"].sql, state["sql"].params)
+        except Exception as exc:
+            warnings = list(state.get("warnings", []))
+            warnings.append(f"Query execution failed: {exc}")
+            return {"data": QueryData(), "execution_error": str(exc), "warnings": warnings}
         return {"data": QueryData(columns=list(rows[0].keys()) if rows else [], rows=rows, row_count=len(rows))}
 
     def _post_process(self, state: AnalyticsState) -> AnalyticsState:
@@ -321,6 +363,10 @@ class SportsAnalyticsService:
 
         if state.get("needs_clarification"):
             summary = "The request needs clarification before SQL execution."
+            return {"summary": summary}
+
+        if state.get("execution_error"):
+            summary = "The query could not be executed against the analytics database. See warnings for details."
             return {"summary": summary}
 
         if data.row_count == 0:

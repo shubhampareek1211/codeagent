@@ -403,27 +403,45 @@ def _build_where_clause(
     return (" AND ".join(clauses) if clauses else "1=1"), params
 
 
+# Column expression per filter field. Multi-value ("in") filters compile to
+# `= ANY(%s)` / `ILIKE ANY(%s)` with a list param — never contradictory ANDed
+# equality clauses (PLAN.md T0.2).
+_FILTER_COLUMNS: dict[str, tuple[str, str]] = {
+    # field -> (column expression, match kind)
+    "position": ("a.position", "exact"),
+    "team": ("a.team", "ilike"),
+    "sport": ("a.sport", "exact"),
+    "nationality": ("a.nationality", "ilike"),
+    "competition": ("s.competition", "ilike_contains"),
+    "session_type": ("s.session_type", "exact"),
+    "athlete_name": ("a.name", "ilike"),
+}
+
+
 def _build_filter_clause(filters: list[QueryFilter]) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
     for query_filter in filters:
-        if query_filter.field == "position":
-            clauses.append("a.position = %s")
+        spec = _FILTER_COLUMNS.get(query_filter.field)
+        if spec is None:
+            continue
+        column, kind = spec
+        if query_filter.operator == "in":
+            values = list(query_filter.value)
+            if kind == "exact":
+                clauses.append(f"{column} = ANY(%s)")
+                params.append(values)
+            else:
+                clauses.append(f"{column} ILIKE ANY(%s)")
+                params.append([f"%{value}%" for value in values] if kind == "ilike_contains" else values)
+        elif kind == "exact":
+            clauses.append(f"{column} = %s")
             params.append(query_filter.value)
-        elif query_filter.field == "team":
-            clauses.append("a.team ILIKE %s")
-            params.append(query_filter.value)
-        elif query_filter.field == "sport":
-            clauses.append("a.sport = %s")
-            params.append(query_filter.value)
-        elif query_filter.field == "nationality":
-            clauses.append("a.nationality ILIKE %s")
-            params.append(query_filter.value)
-        elif query_filter.field == "competition":
-            val = query_filter.value
-            clauses.append("s.competition ILIKE %s")
-            params.append(val if val.startswith("%") else f"%{val}%")
-        elif query_filter.field == "session_type":
-            clauses.append("s.session_type = %s")
+        elif kind == "ilike_contains":
+            value = query_filter.value
+            clauses.append(f"{column} ILIKE %s")
+            params.append(value if value.startswith("%") else f"%{value}%")
+        else:
+            clauses.append(f"{column} ILIKE %s")
             params.append(query_filter.value)
     return " AND ".join(clauses), params

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,17 @@ from app.sports_analytics.repository import SportsAnalyticsRepository
 from app.sports_analytics.retrieval import SportsRetrievalService
 from app.sports_analytics.service import SportsAnalyticsService
 
-app = FastAPI(title="Sports Analytics Backend", version="0.1.0")
+analytics_service: Optional[SportsAnalyticsService] = None
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    global analytics_service
+    analytics_service = build_analytics_service()
+    yield
+
+
+app = FastAPI(title="Sports Analytics Backend", version="0.1.0", lifespan=lifespan)
 
 origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
@@ -29,8 +40,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-analytics_service: Optional[SportsAnalyticsService] = None
 
 
 def build_analytics_service() -> SportsAnalyticsService:
@@ -47,12 +56,6 @@ def build_analytics_service() -> SportsAnalyticsService:
         retrieval_service=retrieval_service,
         default_limit=settings.sports_default_limit,
     )
-
-
-@app.on_event("startup")
-def startup_event() -> None:
-    global analytics_service
-    analytics_service = build_analytics_service()
 
 
 @app.get("/health", response_model=HealthResponse)

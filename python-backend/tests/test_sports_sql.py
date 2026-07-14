@@ -84,3 +84,47 @@ def test_requested_limit_is_capped_at_50() -> None:
 
     assert intent.requested_limit == 99
     assert plan.limit == 50
+
+
+# ── Audit regression tests (PLAN.md M0) ─────────────────────────────────────
+
+
+def test_multi_sport_comparison_compiles_grouped_sql() -> None:
+    intent = extract_intent("Compare total distance between soccer and american football")
+    plan = build_query_plan(intent)
+    compiled = compile_sql(plan)
+
+    assert "GROUP BY a.sport" in compiled.sql
+    assert "a.sport = %s" not in compiled.sql
+    assert validate_sql(plan, compiled).valid is True
+
+
+def test_in_filter_compiles_to_any_clause() -> None:
+    intent = extract_intent("Total distance for forwards and midfielders")
+    plan = build_query_plan(intent)
+    compiled = compile_sql(plan)
+
+    assert "a.position = ANY(%s)" in compiled.sql
+    assert ["forward", "midfielder"] in compiled.params
+
+
+def test_wellness_metric_with_competition_filter_is_rejected_before_sql() -> None:
+    """'Average fatigue score in the World Cup' must not compile crashing SQL (audit B3)."""
+    intent = extract_intent("Average fatigue score in the World Cup")
+    plan = build_query_plan(intent)
+    validation = validate_query_plan(plan)
+
+    assert validation.valid is False
+    assert any("wellness" in message for message in validation.messages)
+
+
+def test_athlete_name_filter_compiles_to_name_ilike() -> None:
+    intent = extract_intent(
+        "How many passes did Messi make?",
+        athlete_names=["Lionel Andrés Messi Cuccittini"],
+    )
+    plan = build_query_plan(intent)
+    compiled = compile_sql(plan)
+
+    assert "a.name ILIKE %s" in compiled.sql
+    assert "Lionel Andrés Messi Cuccittini" in compiled.params

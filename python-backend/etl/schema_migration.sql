@@ -70,7 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_tracking_play     ON player_tracking(play_id);
 INSERT INTO competitions (name, sport, season, country, start_date, end_date)
 VALUES
     ('FIFA World Cup',          'soccer',             '2022', 'Qatar',        '11/20/2022', '12/18/2022'),
-    ('NFL Big Data Bowl',       'american_football',  '2022', 'United States', '09/09/2021', '01/09/2022')
+    ('NFL Big Data Bowl',       'american_football',  '2018', 'United States', '09/06/2018', '02/03/2019')
 ON CONFLICT DO NOTHING;
 
 -- ── Indexes for common analytics filters / groupings ─────────

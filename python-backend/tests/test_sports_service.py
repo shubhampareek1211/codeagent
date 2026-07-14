@@ -121,3 +121,96 @@ def test_graph_returns_baseline_response_with_grounding() -> None:
     assert response.visualization.chart_type == "bar"
     assert response.retrieved_context
     assert "historical baseline" in response.summary.lower()
+
+
+# ── Audit regression tests (PLAN.md M0 / T4.1) ──────────────────────────────
+
+
+class FakeAnchoredRepository(FakeRepository):
+    """Repository exposing dataset date bounds + entity index + explain."""
+
+    def __init__(self) -> None:
+        self.explained: list[str] = []
+
+    def get_max_session_date(self):
+        from datetime import date
+
+        return date(2022, 12, 18)
+
+    def list_athlete_names(self) -> list[str]:
+        return ["Lionel Andrés Messi Cuccittini"]
+
+    def explain(self, sql: str, params: list[object]) -> str | None:
+        self.explained.append(sql)
+        return None
+
+
+def test_relative_windows_anchor_to_dataset_max_date() -> None:
+    """'last week' anchors to the data's latest date, not the wall clock (audit B5)."""
+    service = SportsAnalyticsService(
+        repository=FakeAnchoredRepository(),
+        retrieval_service=FakeRetrieval(),
+        default_limit=5,
+    )
+
+    response = service.query(SportsQueryRequest(query="Which athletes had the highest workload last week?"))
+
+    assert response.intent.time_window is not None
+    assert str(response.intent.time_window.end_date) == "2022-12-18"
+
+
+def test_compiled_sql_is_engine_validated_via_explain() -> None:
+    repository = FakeAnchoredRepository()
+    service = SportsAnalyticsService(
+        repository=repository,
+        retrieval_service=FakeRetrieval(),
+        default_limit=5,
+    )
+
+    service.query(SportsQueryRequest(query="Top 5 players by total distance"))
+
+    assert repository.explained  # EXPLAIN ran before execution
+
+
+class FailingExplainRepository(FakeAnchoredRepository):
+    def explain(self, sql: str, params: list[object]) -> str | None:
+        return 'missing FROM-clause entry for table "s"'
+
+    def execute_select(self, sql: str, params: list[object]) -> list[dict[str, object]]:
+        raise AssertionError("execution must not run when engine validation fails")
+
+
+def test_engine_validation_failure_stops_execution_gracefully() -> None:
+    service = SportsAnalyticsService(
+        repository=FailingExplainRepository(),
+        retrieval_service=FakeRetrieval(),
+        default_limit=5,
+    )
+
+    response = service.query(SportsQueryRequest(query="Top 5 players by total distance"))
+
+    assert response.data.row_count == 0
+    assert any("engine validation" in warning for warning in response.warnings)
+
+
+class BrokenRepository(FakeAnchoredRepository):
+    def explain(self, sql: str, params: list[object]) -> str | None:
+        return None
+
+    def execute_select(self, sql: str, params: list[object]) -> list[dict[str, object]]:
+        raise RuntimeError("connection refused")
+
+
+def test_db_failure_returns_graceful_response_not_500() -> None:
+    """DB errors surface as warnings, never unhandled exceptions (audit M4)."""
+    service = SportsAnalyticsService(
+        repository=BrokenRepository(),
+        retrieval_service=FakeRetrieval(),
+        default_limit=5,
+    )
+
+    response = service.query(SportsQueryRequest(query="Top 5 players by total distance"))
+
+    assert response.data.row_count == 0
+    assert any("Query execution failed" in warning for warning in response.warnings)
+    assert "could not be executed" in response.summary

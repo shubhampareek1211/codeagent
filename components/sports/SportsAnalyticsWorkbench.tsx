@@ -36,11 +36,14 @@ type QueryResponse = {
     sql: string;
   };
   warnings: string[];
+  needs_clarification?: boolean;
+  clarification_prompt?: string | null;
 };
 
 const SAMPLE_QUERIES = [
-  "Which athletes had the highest workload from 1/1/2026 to 1/5/2026?",
-  "Show average sprint distance by position over the last 30 days",
+  "Top 10 players by total distance in the World Cup",
+  "Which NFL position averages the highest speed?",
+  "Average passes per position in soccer",
   "Who is trending below their baseline performance?",
 ];
 
@@ -50,6 +53,11 @@ export function SportsAnalyticsWorkbench() {
   const [status, setStatus] = useState<AnalyticsHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isLocalhost, setIsLocalhost] = useState(false);
+
+  useEffect(() => {
+    setIsLocalhost(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +183,8 @@ export function SportsAnalyticsWorkbench() {
             </div>
 
             <p className="mt-3 text-xs text-white/55">
-              If your dataset only covers early January 2026, start with the 1/1/2026 to 1/5/2026 sample query.
+              Datasets: FIFA World Cup 2022 (StatsBomb) and NFL Big Data Bowl 2021 — relative windows like
+              &ldquo;last week&rdquo; are anchored to the latest date in the data.
             </p>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -183,14 +192,16 @@ export function SportsAnalyticsWorkbench() {
                 {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                 Run query
               </Button>
-              <Link
-                href="http://127.0.0.1:8000/docs"
-                target="_blank"
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-4 py-2 text-sm text-white/75 transition hover:border-accent/25 hover:text-foreground"
-              >
-                Open FastAPI docs
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
+              {isLocalhost ? (
+                <Link
+                  href="http://127.0.0.1:8000/docs"
+                  target="_blank"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-4 py-2 text-sm text-white/75 transition hover:border-accent/25 hover:text-foreground"
+                >
+                  Open FastAPI docs
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              ) : null}
             </div>
 
             {status?.detail ? (
@@ -243,6 +254,12 @@ export function SportsAnalyticsWorkbench() {
           <p className="mt-4 text-sm leading-7 text-white/80">
             {result?.summary || "Run a query to see the grounded response summary here."}
           </p>
+
+          {result?.needs_clarification && result?.clarification_prompt ? (
+            <div className="mt-4 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+              {result.clarification_prompt}
+            </div>
+          ) : null}
 
           {result?.warnings?.length ? (
             <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">

@@ -69,6 +69,12 @@ def build_query_plan(intent: StructuredIntent) -> QueryPlan:
     )
 
 
+# Filter fields / dimensions that live on the sessions table. Wellness metrics
+# never join sessions, so combining them would compile SQL referencing an
+# unjoined alias and crash at execution time (PLAN.md T0.4).
+_SESSIONS_ONLY_FIELDS = {"competition", "opponent", "session_type"}
+
+
 def validate_query_plan(plan: QueryPlan) -> ValidationOutcome:
     messages: list[str] = []
     if plan.metric not in METRIC_REGISTRY:
@@ -77,6 +83,21 @@ def validate_query_plan(plan: QueryPlan) -> ValidationOutcome:
         messages.append(f"Unsupported query kind: {plan.query_kind}")
     if plan.metric_table not in {"gps_metrics", "wellness", "sessions"}:
         messages.append(f"Unsupported metric table: {plan.metric_table}")
+
+    if plan.metric_table == "wellness":
+        metric_name = METRIC_REGISTRY[plan.metric].display_name if plan.metric in METRIC_REGISTRY else plan.metric
+        for query_filter in plan.filters:
+            if query_filter.field in _SESSIONS_ONLY_FIELDS:
+                messages.append(
+                    f"{metric_name} is a wellness metric and cannot be filtered by {query_filter.field} — "
+                    "wellness check-ins are not tied to matches or competitions."
+                )
+        for dimension in plan.dimensions:
+            if dimension in _SESSIONS_ONLY_FIELDS:
+                messages.append(
+                    f"{metric_name} is a wellness metric and cannot be grouped by {dimension} — "
+                    "wellness check-ins are not tied to matches or competitions."
+                )
 
     supported_groupings = set(GROUPING_ALIASES.keys()) | {
         "athlete_id", "athlete_name", "position", "team",

@@ -147,35 +147,35 @@ competitions(competition_id, name, sport, season, country, start_date, end_date)
 
 ```
 ├── app/
-│   ├── api/sports-analytics/route.ts   Next.js proxy (+ embedded fallback)
+│   ├── api/sports-analytics/route.ts   Next.js proxy to the FastAPI backend
 │   └── sports-analytics/page.tsx       Workbench page
 ├── components/sports/
 │   └── SportsAnalyticsWorkbench.tsx    Workbench UI
-├── lib/sports-analytics/
-│   └── demo-engine.ts                  Embedded demo engine (Vercel, no backend)
-├── data/sports-analytics/
-│   └── public-demo.json                Bundled sample dataset
 └── python-backend/
     ├── app/
     │   ├── main.py                     FastAPI app
     │   └── sports_analytics/
-    │       ├── intent.py               Intent extractor
-    │       ├── planner.py              Query planner
+    │       ├── intent.py               Intent extractor (word-boundary grammar + entity index)
+    │       ├── planner.py              Query planner + plan validation
     │       ├── sql.py                  Deterministic SQL compiler
     │       ├── registry.py             Metric + grouping registry (14 metrics)
     │       ├── service.py              LangGraph service (15 nodes)
     │       ├── retrieval.py            Hybrid BM25 + FAISS retrieval
-    │       └── repository.py           PostgreSQL executor
+    │       └── repository.py           PostgreSQL executor (+ EXPLAIN validation)
     ├── etl/
     │   ├── schema_migration.sql        Schema extension (run once)
     │   ├── statsbomb_etl.py            FIFA World Cup 2022 ETL
-    │   └── nfl_etl.py                  NFL Big Data Bowl 2021 ETL
+    │   └── nfl_etl.py                  NFL Big Data Bowl 2021 ETL (2018 season data)
     ├── sql/
     │   ├── sports_analytics_schema.sql Base schema
     │   └── sports_analytics_seed.sql   Synthetic seed data
     ├── data/sports_analytics/          Retrieval corpus (JSON)
+    ├── eval/                           Golden-question eval harness
     └── tests/                          Intent / SQL / service tests
 ```
+
+See `PLAN.md` for the audit-driven rebuild roadmap and `CLAUDE.md` for agent
+working conventions.
 
 ---
 
@@ -276,28 +276,23 @@ curl -X POST http://localhost:8000/query \
 
 ---
 
-## Production (Vercel)
+## Production
 
-On Vercel, `SPORTS_ANALYTICS_BACKEND_URL` is not set. The Next.js proxy route automatically falls back to the embedded TypeScript demo engine (`lib/sports-analytics/demo-engine.ts`) backed by a committed sample dataset — no Python backend or database required.
-
-```
-Vercel request
-      │
-      ▼
-app/api/sports-analytics/route.ts
-      │
-      ├── SPORTS_ANALYTICS_BACKEND_URL set? ──► proxy to FastAPI (local dev)
-      │
-      └── not set? ──► embedded demo-engine.ts (production fallback)
-```
+The Next.js proxy (`app/api/sports-analytics/route.ts`) forwards to
+`SPORTS_ANALYTICS_BACKEND_URL` (default `http://127.0.0.1:8000`). If the backend
+is unreachable it returns a structured 503 — this standalone repo has **no
+embedded demo engine**; a deployed FastAPI backend (see `DEPLOY_BACKEND.md`) is
+required for production use.
 
 ---
 
-## Tests
+## Tests & Evaluation
 
 ```bash
 cd python-backend
-pytest tests/test_sports_intent.py tests/test_sports_sql.py tests/test_sports_service.py -v
+pytest tests/ -v                      # unit + regression tests
+python eval/run_eval.py               # golden-question eval (offline)
+python eval/run_eval.py --execute     # + EXPLAIN/execute against the live DB
 ```
 
 ---
